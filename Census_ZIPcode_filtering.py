@@ -4,9 +4,9 @@ import geopandas as gpd
 from pathlib import Path
 
 # ======= EDIT THESE =======
-COUNTIES_SHP = r"C:\Users\marco\OneDrive\Documents\ESENG masters\ESENG 503 2\tl_2020_us_county\tl_2020_us_county.shp"  # Tiger shapefile county
-ZCTA_SHP     = r"C:\Users\marco\OneDrive\Documents\ESENG masters\ESENG 503 2\nationwide_TIGER\tl_2020_us_zcta520.shp" # Tiger shapefile ZIP
-INPUT_DATA   = r"C:\Users\marco\OneDrive\Documents\ESENG masters\ESENG 503 2\ACSST5Y2023.S1903_2025-07-28T104140\ACSST5Y2023.S1903-Data.csv" # Census data      
+COUNTIES_SHP = r"data/tl_2023_us_county/tl_2023_us_county.shp"  # Tiger shapefile county
+ZCTA_SHP     = r"data/tl_2023_us_zcta520/tl_2023_us_zcta520.shp" # Tiger shapefile ZIP
+INPUT_DATA   = r"data/ACSST5Y2023.S1903_2026-03-02T165046/ACSST5Y2023.S1903-Data.csv" # Census data      
 OUTPUT_DATA  = "acs_santa_clara_only.csv"     # .csv or .parquet
 # ==========================
 

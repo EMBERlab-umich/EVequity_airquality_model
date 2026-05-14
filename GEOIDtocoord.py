@@ -3,7 +3,7 @@ import geopandas as gpd
 import pandas as pd
 
 # The blocks variable will read the tiger shapefile for the state of California, of any other desired location
-blocks = gpd.read_file(r"C:\Users\marco\OneDrive\Documents\ESENG masters\ESENG 503 2\tl_2020_06_tabblock20\tl_2020_06_tabblock20.shp")
+blocks = gpd.read_file("data/tl_2023_06_tabblock20/tl_2023_06_tabblock20.shp")
 
 # Then, a collumn containing a 15 digit GEOID will be generated to allow for later crossing between the LODES and tiger shapefiles
 blocks['GEOID'] = (
@@ -25,19 +25,24 @@ blocks['centroid'] = blocks.geometry.centroid
 blocks = blocks.drop(columns='geometry')
 # debugging print statement, ignore if not necessary 
 
+
 #print(blocks)
 
 
-file_path = r"C:\Users\marco\OneDrive\Documents\ESENG masters\ESENG 503 2\ca_od_main_JT00_2022.csv.gz" #read LODES dataset for all commuters in california
+file_path = "data/LODES_data_cars.csv" #read LODES dataset for all commuters in california (edited to include number of cars)
 # Change geocode columns to strings in order to prevent errors
+# Note that this edited version of the LODES database has removed the zeroes from the front of the strings. If using a different data source, this may need to be addressed in this file and in the filtering file.
 dtype_spec = {
     'w_geocode': str,
-    'h_geocode': str
+    'h_geocode': str,
+    'Number of Cars': float
 }
 
 
 # assign LODES data to a dataframe 
-LODES_df = pd.read_csv(file_path, compression='gzip',usecols = ['w_geocode', 'h_geocode'], dtype=dtype_spec)
+LODES_df = pd.read_csv(file_path, usecols = ['w_geocode', 'h_geocode','Number of Cars'], dtype=dtype_spec)
+LODES_df['w_geocode'] = LODES_df['w_geocode'].str.zfill(15)
+LODES_df['h_geocode'] = LODES_df['h_geocode'].str.zfill(15)
 
 # Create collumns for both the x and y coordinates of the latitudes of each GEOID centroid 
 blocks['lat'] = blocks['centroid'].y
@@ -50,6 +55,8 @@ LODES_df = LODES_df.merge(
     how='left'
 )
 
+print(LODES_df.head())
+
 # merge both dataframes to add the latitude and longitude coordinates of each work GEOID
 LODES_df = LODES_df.merge(
     blocks.rename(columns={'GEOID': 'w_geocode', 'lat': 'work_lat', 'lon': 'work_lon'}),
@@ -59,4 +66,4 @@ LODES_df = LODES_df.merge(
 
 # cleans the final dataframe and converts it to a .csv file which will be used in other files 
 LODES_df = LODES_df.drop(columns=['centroid_x','centroid_y'])
-LODES_df.to_csv(r"C:\Users\marco\OneDrive\Documents\ESENG masters\ESENG 503 2\GEOID_to_Centroid.csv", index=False)
+LODES_df.to_csv("data/GEOID_to_Centroid.csv", index=False)

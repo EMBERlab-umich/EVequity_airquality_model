@@ -3,7 +3,7 @@
 import pandas as pd
 
 # Path to fleet database file
-file_path = r"C:\Users\marco\OneDrive\Documents\ESENG masters\ESENG 503 2\FleetDB-County-SANTACLARA-2022-P_T1-GVWR-All-All-Agg-Selected_Model_Years-All-ByCensusBlockGroupCode.csv"
+file_path = "data/FleetDB-County-SANTACLARA-2023-P_T1_T2-GVWR-All-All-Agg-All-Agg-ByCensusBlockGroupCode.csv"
 
 # Skip metadata to load actual data 
 # might have to be changed depending on the datafile being used, printing the df might assist with debugging if needed to estimate correct number of rows to skip 
@@ -11,6 +11,9 @@ df = pd.read_csv(file_path, skiprows=12)
 
 # Filter out Hydrogen and Natural Gas from fuel types as they are not rpesent in the emmissions dataset
 df = df[~df['Fuel Type'].isin(['Hydrogen', 'Natural Gas'])].copy()
+
+# Filter out Unknown model years
+df = df[df['Model Year']!="Unknown"].copy()
 
 # Add the correct names to the fuel collumn so the fleet data can be merged with the emissions data
 def classify_fuel(row):
@@ -32,6 +35,6 @@ def classify_fuel(row):
 df['fuel'] = df.apply(classify_fuel, axis=1)
 
 # Save result
-df.to_csv("cleaned_fleet_data.csv", index=False)
+df.to_csv("data/cleaned_fleet_data.csv", index=False)
 
 print("Cleaned data saved as 'cleaned_fleet_data.csv'")

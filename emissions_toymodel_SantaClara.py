@@ -4,14 +4,15 @@
 import pandas as pd
 
 # Load fleet data 
-fleet_df = pd.read_csv("cleaned_fleet_data.csv")
+fleet_df = pd.read_csv("data/cleaned_fleet_data.csv")
 fleet_df = fleet_df.rename(columns={"fuel": "Fuel"})
 
 # Ensure model year is numeric
+print(fleet_df['Model Year'].dtype)
 fleet_df['Model Year'] = fleet_df['Model Year'].astype(int)
 
 # Load EMFAC emissions data 
-emfac_path = r"C:\Users\marco\OneDrive\Documents\ESENG masters\ESENG 503 2\EMFAC.csv"
+emfac_path = r"data/EMFAC2025EI-EMFAC202YClass-SantaClara-2023-Annual-20260302133045.csv"
 EMFAC_df = pd.read_csv(emfac_path, skiprows=range(0, 8))
 
 # Calculate emissions per mile in kg 
@@ -90,6 +91,6 @@ avg_emissions_per_geoid = avg_emissions_per_geoid.rename(columns={
 })
 
 # Results are saved to a csv
-avg_emissions_per_geoid.to_csv("avg_emissions_per_geoid_SantaClara.csv", index=False)
+avg_emissions_per_geoid.to_csv("data/avg_emissions_per_geoid_SantaClara.csv", index=False)
 
 print("Average emissions saved to 'avg_emissions_per_geoid_SantaClara.csv'")

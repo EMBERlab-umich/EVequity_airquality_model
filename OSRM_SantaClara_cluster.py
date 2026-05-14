@@ -13,15 +13,30 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import os
 
+# === Set data path ===
+PATH = "data/"
+
 # === Load Required Data ===
 start_time = time.time()
-zcta = gpd.read_file("/home/mmarcial/datafiles/tl_2020_us_zcta520.shp").to_crs(epsg=4326) # reads US tiger shapefiles for ZIP code areas
-od_df = pd.read_parquet("/home/mmarcial/datafiles/santa_clara_geoids.parquet") # reads selected county GEOID dataset
+zcta = gpd.read_file(f"{PATH}tl_2023_us_zcta520/tl_2023_us_zcta520.shp").to_crs(epsg=4326) # reads US tiger shapefiles for ZIP code areas
+od_df = pd.read_csv(f"{PATH}santa_clara_geoids.csv") # reads selected county GEOID dataset
 od_df['h_geocode'] = od_df['h_geocode'].astype(str)
-emissions_df = pd.read_parquet("/home/mmarcial/datafiles/avg_emissions_per_geoid_SantaClara.parquet") # reads avg emissions per GEOID for selected county dataset
-emissions_df['Census Block Group Code'] = emissions_df['Census Block Group Code'].astype(str)
+od_df['h_geocode'] = od_df['h_geocode'].str.zfill(15)
+emissions_df = pd.read_csv(f"{PATH}avg_emissions_per_geoid_SantaClara.csv") # reads avg emissions per GEOID for selected county dataset
+emissions_df['Census Block Group Code'] = (
+    emissions_df['Census Block Group Code']
+    .astype(str)
+    .str.zfill(12)
+)
 print(f"Data loading time: {time.time() - start_time:.2f} seconds") # output loading time for data, can be commented out 
+# print(emissions_df['Census Block Group Code'].head())
+# print(emissions_df['Census Block Group Code'].str.len().value_counts())
 
+# print(od_df['h_geocode'].head())
+# print(od_df['h_geocode'].str.len().value_counts())
+print(od_df[['home_lat','home_lon','work_lat','work_lon']].isna().sum())
+print(od_df.head())
+print(len(od_df))
 # === Emissions calculation per OD pair ===
 def process_route(idx_row):
     idx, row = idx_row
@@ -32,16 +47,34 @@ def process_route(idx_row):
     # Takes first 12 digits of h_geocode
     origin_tract = row['h_geocode'][:12]
 
+
     # Filter emissions_df for a matching GEOID
     emission_row = emissions_df[emissions_df['Census Block Group Code'] == origin_tract]
     if emission_row.empty:
         return {'route_idx': idx, 'error': f"No emissions data for GEOID {origin_tract}"}
     emissions = emission_row.iloc[0]
     
+        # --- Validate coordinates before calling OSRM ---
+    if (
+        pd.isna(origin[0]) or pd.isna(origin[1]) or
+        pd.isna(destination[0]) or pd.isna(destination[1])
+    ):
+        return {'route_idx': idx, 'error': 'Missing coordinates'}
+    
+    # Optional: ensure coordinates are within valid bounds
+    if not (-90 <= origin[0] <= 90 and -90 <= destination[0] <= 90):
+        return {'route_idx': idx, 'error': 'Invalid latitude values'}
+    
+    if not (-180 <= origin[1] <= 180 and -180 <= destination[1] <= 180):
+        return {'route_idx': idx, 'error': 'Invalid longitude values'}
+    
     try:
         # OSRM request URL with origin and destination coordinates and server call 
         osrm_url = f"http://localhost:5000/route/v1/driving/{origin[1]},{origin[0]};{destination[1]},{destination[0]}?overview=full&geometries=polyline"
         response = requests.get(osrm_url)
+        # print("Status code:", response.status_code)
+        # print("URL:", osrm_url)
+        # print("Raw response:", response.text[:300])
         route_data = response.json()
 
         if 'routes' not in route_data or not route_data['routes']:
@@ -66,6 +99,10 @@ def process_route(idx_row):
         # Assigns a ZIP code to each segment point 
         seg_gdf = gpd.sjoin(seg_gdf, zcta[['ZCTA5CE20', 'geometry']], how='left', predicate='within')
         seg_gdf = seg_gdf.dropna(subset=['ZCTA5CE20'])
+
+        # Multiply distance_miles by number of cars on route
+        num_cars = row['Number of Cars']
+        seg_gdf['distance_miles'] = seg_gdf['distance_miles'] * num_cars
 
         # Aggregate total travel miles per ZIP
         zip_dist = seg_gdf.groupby('ZCTA5CE20')['distance_miles'].sum().reset_index()
@@ -113,13 +150,17 @@ def process_route(idx_row):
 # === Run parallel routing with ThreadPool ===
 results = []
 t_parallel = time.time()
-with ThreadPoolExecutor(max_workers=2) as executor: # number of max workers can be changed as needed, through my tests there tended to be errors when using more then 2 workers in the cluster
-    #futures = [executor.submit(process_route, item) for item in od_df.head(2000).iterrows()] uncomment if want to run for less OD pairs and change the number in head()
+with ThreadPoolExecutor(max_workers=4) as executor: # number of max workers can be changed as needed, through my tests there tended to be errors when using more then 2 workers in the cluster
+    #futures = [executor.submit(process_route, item) for item in od_df.head(100).iterrows()] #uncomment if want to run for less OD pairs and change the number in head()
     futures = [executor.submit(process_route, item) for item in od_df.iterrows()] # comment if not running for entire dataset
     for future in as_completed(futures):
         results.append(future.result())
 
 print(f"Total execution time: {time.time() - t_parallel:.2f} seconds")
+
+for r in results:
+    if 'error' in r:
+        print("ERROR:", r['error'])
 
 # === Post-processing and Output Aggregation ===
 records_A = []  # Total emissions per ZIP (receptor)
@@ -157,16 +198,16 @@ for r in results:
         })
 
         # D: Matrix of origin → receptor
-        #records_D.append({
-            #'origin_zip': origin_zip,
-            #'receptor_zip': receptor_zip,
-            #'PM25': entry['PM25'],
-            #'SOx': entry['SOx'],
-            #'NOX': entry['NOX'],
-            #'VOC': entry['VOC'],
-            #'NH3': entry['NH3'],
-            #'CO2': entry['CO2']
-        #})
+        records_D.append({
+            'origin_zip': origin_zip,
+            'receptor_zip': receptor_zip,
+            'PM25': entry['PM25'],
+            'SOx': entry['SOx'],
+            'NOX': entry['NOX'],
+            'VOC': entry['VOC'],
+            'NH3': entry['NH3'],
+            'CO2': entry['CO2']
+        })
 
 # === Convert to DataFrames and Aggregate ===
 if records_A:
@@ -181,10 +222,10 @@ if records_C:
 	df_C = pd.DataFrame(records_C).groupby('dest_zip')[['PM25', 'SOx', 'NOX', 'VOC', 'NH3', 'CO2']].sum().reset_index()
 else:
 	df_C = pd.DataFrame()
-#if records_D:
-#	df_D = pd.DataFrame(records_D).groupby(['origin_zip', 'receptor_zip'])[['PM25', 'SOx', 'NOX', 'VOC', 'NH3', 'CO2']].sum().reset_index()
-#else:
-#	df_D = pd.DataFrame()
+if records_D:
+	df_D = pd.DataFrame(records_D).groupby(['origin_zip', 'receptor_zip'])[['PM25', 'SOx', 'NOX', 'VOC', 'NH3', 'CO2']].sum().reset_index()
+else:
+	df_D = pd.DataFrame()
 
 # === Save to CSV with confirmation ===
 output_dir = "emissions_outputs"
@@ -201,4 +242,4 @@ def save_with_check(df, filename, label):
 save_with_check(df_A, "receptor_zip_emissions.csv", "Total emissions per ZIP (receptor)")
 save_with_check(df_B, "origin_zip_emissions.csv", "Total emissions caused by origin ZIP")
 save_with_check(df_C, "destination_zip_emissions.csv", "Total emissions caused by destination ZIP")
-#save_with_check(df_D, "zip_to_zip_emissions_matrix.csv", "ZIP-to-ZIP emissions matrix")
+save_with_check(df_D, "zip_to_zip_emissions_matrix.csv", "ZIP-to-ZIP emissions matrix")
